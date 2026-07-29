@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bank Statement Analyzer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="card">
+    <h1>Bank Statement Analyzer</h1>
+    <p class="subtitle">Upload a PDF bank statement to analyze transactions</p>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-zone-icon">📄</div>
+      <div class="drop-zone-text">Click to select or drag PDF here</div>
+      <div class="drop-zone-hint">PDF files only</div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf" class="hidden">
+
+    <div id="fileInfo" class="file-info hidden">
+      <span class="file-info-name" id="fileName"></span>
+      <span class="file-info-size" id="fileSize"></span>
+    </div>
+
+    <div id="status" class="status hidden"></div>
+
+    <div id="resultGrid" class="result-grid hidden">
+      <div class="result-item">
+        <div class="result-item-label">Transactions</div>
+        <div class="result-item-value" id="rTransactions">0</div>
+      </div>
+      <div class="result-item">
+        <div class="result-item-label">Income</div>
+        <div class="result-item-value positive" id="rIncome">0</div>
+      </div>
+      <div class="result-item">
+        <div class="result-item-label">Expenses</div>
+        <div class="result-item-value negative" id="rExpenses">0</div>
+      </div>
+      <div class="result-item">
+        <div class="result-item-label">Balance</div>
+        <div class="result-item-value" id="rBalance">0</div>
+      </div>
+    </div>
+
+    <button class="btn btn-success" id="exportBtn" disabled hidden>
+      Export XLSX
+    </button>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const statusEl = document.getElementById('status');
+    const resultGrid = document.getElementById('resultGrid');
+    const exportBtn = document.getElementById('exportBtn');
+
+    let downloadUrl = '';
+
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) handleFile(fileInput.files[0]);
+    });
+
+    function handleFile(file) {
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        showStatus('Only PDF files are supported', 'error');
+        return;
+      }
+
+      fileName.textContent = file.name;
+      fileSize.textContent = formatSize(file.size);
+      fileInfo.classList.remove('hidden');
+      resultGrid.classList.add('hidden');
+      exportBtn.classList.add('hidden');
+      exportBtn.disabled = true;
+      showStatus('Uploading and analyzing...', 'loading');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      fetch('/upload', { method: 'POST', body: formData })
+        .then(r => r.json().then(data => ({ status: r.status, data })))
+        .then(({ status, data }) => {
+          if (status !== 200) {
+            showStatus(data.detail || 'Analysis failed', 'error');
+            return;
+          }
+          if (data.status === 'error') {
+            showStatus(data.detail || 'No transactions found', 'error');
+            return;
+          }
+
+          showStatus(
+            `Found ${data.transactions} transactions`,
+            'success'
+          );
+
+          document.getElementById('rTransactions').textContent = data.transactions;
+          document.getElementById('rIncome').textContent = `+${data.income.toLocaleString()} €`;
+          document.getElementById('rExpenses').textContent = `-${data.expenses.toLocaleString()} €`;
+          const bal = data.balance;
+          const balEl = document.getElementById('rBalance');
+          balEl.textContent = `${bal >= 0 ? '+' : ''}${bal.toLocaleString()} €`;
+          balEl.className = 'result-item-value ' + (bal >= 0 ? 'positive' : 'negative');
+          resultGrid.classList.remove('hidden');
+
+          downloadUrl = data.download_url;
+          exportBtn.classList.remove('hidden');
+          exportBtn.disabled = false;
+        })
+        .catch(err => {
+          showStatus('Connection error: ' + err.message, 'error');
+        });
+    }
+
+    exportBtn.addEventListener('click', () => {
+      if (downloadUrl) {
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = downloadUrl.split('/').pop();
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    });
+
+    function showStatus(msg, type) {
+      statusEl.className = 'status ' + type;
+      if (type === 'loading') {
+        statusEl.innerHTML = '<div class="spinner"></div>' + msg;
+      } else {
+        statusEl.innerHTML = msg;
+      }
+      statusEl.classList.remove('hidden');
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+  </script>
+</body>
+</html>

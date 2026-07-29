@@ -1,0 +1,7 @@
+name = "bank-statement-analyzer"
+pages_build_output_dir = "."
+
+compatibility_date = "2026-07-29"
+
+[env.production]
+vars = { API_BASE_URL = "http://localhost:8000" }
