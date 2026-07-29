@@ -44,9 +44,25 @@
       </div>
     </div>
 
-    <button class="btn btn-success" id="exportBtn" disabled hidden>
-      Export XLSX
-    </button>
+    <div id="filterSection" class="filter-section hidden">
+      <label class="checkbox-label">
+        <input type="checkbox" id="filterIncome" checked>
+        <span>Incoming payments</span>
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="filterExpense" checked>
+        <span>Outgoing payments</span>
+      </label>
+    </div>
+
+    <div class="btn-group hidden" id="btnGroup">
+      <button class="btn btn-primary" id="exportBtn">
+        Export XLSX
+      </button>
+      <button class="btn btn-outline" id="sheetsBtn">
+        Export to Google Sheets
+      </button>
+    </div>
   </div>
 
   <script>
@@ -57,9 +73,14 @@
     const fileSize = document.getElementById('fileSize');
     const statusEl = document.getElementById('status');
     const resultGrid = document.getElementById('resultGrid');
+    const filterSection = document.getElementById('filterSection');
+    const btnGroup = document.getElementById('btnGroup');
     const exportBtn = document.getElementById('exportBtn');
+    const sheetsBtn = document.getElementById('sheetsBtn');
+    const filterIncome = document.getElementById('filterIncome');
+    const filterExpense = document.getElementById('filterExpense');
 
-    let downloadUrl = '';
+    let sessionId = '';
 
     dropZone.addEventListener('click', () => fileInput.click());
 
@@ -80,6 +101,15 @@
       if (fileInput.files.length) handleFile(fileInput.files[0]);
     });
 
+    function getFilter() {
+      const inc = filterIncome.checked;
+      const exp = filterExpense.checked;
+      if (inc && exp) return 'all';
+      if (inc) return 'income';
+      if (exp) return 'expense';
+      return 'none';
+    }
+
     function handleFile(file) {
       if (!file.name.toLowerCase().endsWith('.pdf')) {
         showStatus('Only PDF files are supported', 'error');
@@ -90,8 +120,8 @@
       fileSize.textContent = formatSize(file.size);
       fileInfo.classList.remove('hidden');
       resultGrid.classList.add('hidden');
-      exportBtn.classList.add('hidden');
-      exportBtn.disabled = true;
+      filterSection.classList.add('hidden');
+      btnGroup.classList.add('hidden');
       showStatus('Uploading and analyzing...', 'loading');
 
       const formData = new FormData();
@@ -109,6 +139,8 @@
             return;
           }
 
+          sessionId = data.session_id;
+
           showStatus(
             `Found ${data.transactions} transactions`,
             'success'
@@ -122,26 +154,66 @@
           balEl.textContent = `${bal >= 0 ? '+' : ''}${bal.toLocaleString()} €`;
           balEl.className = 'result-item-value ' + (bal >= 0 ? 'positive' : 'negative');
           resultGrid.classList.remove('hidden');
-
-          downloadUrl = data.download_url;
-          exportBtn.classList.remove('hidden');
-          exportBtn.disabled = false;
+          filterSection.classList.remove('hidden');
+          btnGroup.classList.remove('hidden');
         })
         .catch(err => {
           showStatus('Connection error: ' + err.message, 'error');
         });
     }
 
-    exportBtn.addEventListener('click', () => {
-      if (downloadUrl) {
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = downloadUrl.split('/').pop();
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+    function doExport(format) {
+      const filter = getFilter();
+      if (filter === 'none') {
+        showStatus('Select at least one filter', 'error');
+        return;
       }
-    });
+
+      showStatus('Exporting...', 'loading');
+
+      fetch('/export', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, filter, format }),
+      })
+        .then(r => r.json().then(data => ({ status: r.status, data })))
+        .then(({ status, data }) => {
+          if (status !== 200) {
+            showStatus(data.detail || 'Export failed', 'error');
+            return;
+          }
+
+          if (format === 'google_sheets') {
+            showStatus('Exported to Google Sheets', 'success');
+            window.open(data.sheet_url, '_blank');
+            return;
+          }
+
+          showStatus('Downloading...', 'loading');
+          const a = document.createElement('a');
+          a.href = data.download_url;
+          a.download = data.download_url.split('/').pop();
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+
+          document.getElementById('rTransactions').textContent = data.transactions;
+          document.getElementById('rIncome').textContent = `+${data.income.toLocaleString()} €`;
+          document.getElementById('rExpenses').textContent = `-${data.expenses.toLocaleString()} €`;
+          const bal = data.balance;
+          const balEl = document.getElementById('rBalance');
+          balEl.textContent = `${bal >= 0 ? '+' : ''}${bal.toLocaleString()} €`;
+          balEl.className = 'result-item-value ' + (bal >= 0 ? 'positive' : 'negative');
+
+          showStatus(`Exported ${data.transactions} transactions`, 'success');
+        })
+        .catch(err => {
+          showStatus('Export error: ' + err.message, 'error');
+        });
+    }
+
+    exportBtn.addEventListener('click', () => doExport('xlsx'));
+    sheetsBtn.addEventListener('click', () => doExport('google_sheets'));
 
     function showStatus(msg, type) {
       statusEl.className = 'status ' + type;

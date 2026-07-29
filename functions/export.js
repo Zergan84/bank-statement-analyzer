@@ -6,7 +6,7 @@ export async function onRequest(context) {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const backendUrl = backend + "/upload";
+  const backendUrl = backend + "/export";
 
   const resp = await fetch(backendUrl, {
     method: "POST",

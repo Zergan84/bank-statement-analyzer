@@ -8,3 +8,5 @@ pypdf>=4.0.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 python-multipart>=0.0.9
+google-api-python-client>=2.130.0
+google-auth>=2.30.0
